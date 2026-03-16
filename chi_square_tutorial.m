@@ -324,6 +324,138 @@ xlabel('x'); ylabel('Residual (data - fit)');
 title('Residuals — all points well within error bars');
 grid on;
 
+%% 11. Profile chi-square: rigorous confidence intervals for a parameter
+% The key idea: to find the confidence interval for parameter p_j, we
+% fix p_j at a series of trial values and RE-FIT all other parameters.
+% At each trial value we record the best achievable chi^2.  This gives
+% us a "profile" chi^2(p_j).
+%
+% The minimum of the profile is the global best-fit chi^2_min (achieved
+% at p_j = p_j_best).  The confidence interval is the region where:
+%
+%   Delta_chi^2 = chi^2(p_j) - chi^2_min  <=  threshold
+%
+% For a SINGLE parameter at 95% confidence, the threshold is:
+%
+%   Delta_chi^2_95 = chi2inv(0.95, 1) = 3.84
+%
+% This works because fixing one parameter removes one degree of freedom,
+% so the change in chi^2 follows a chi-squared distribution with 1 dof
+% (Wilks' theorem).  The 95% interval is where the fit is "not
+% significantly worse" than the best fit at the 95% level.
+
+fprintf('\n================================================\n');
+fprintf('=== Profile Chi-Square Confidence Intervals ===\n');
+fprintf('================================================\n');
+
+% We'll profile the wavenumber k (parameter 2) as a demonstration.
+% The same procedure applies to any parameter.
+
+delta_chi2_95 = chi2inv(0.95, 1);  % = 3.84 for 1 parameter
+fprintf('  Delta chi^2 threshold (95%%, 1 dof) = %.4f\n\n', delta_chi2_95);
+
+% Set up a grid of trial k values around the best fit
+k_best  = p_fit(2);
+k_range = linspace(k_best - 0.4, k_best + 0.4, 80);
+
+% For each trial k: fix k, fit the remaining 3 parameters (A, phi, gamma)
+chi2_profile = zeros(size(k_range));
+
+% Model with k fixed: free parameters are q = [A, phi, gamma]
+model_k_fixed = @(q, x, k_fixed) q(1) * sin(k_fixed*x + q(2)) .* exp(-q(3)*x);
+
+% Initial guesses and bounds for the 3 free parameters
+q0 = [p_fit(1), p_fit(3), p_fit(4)];   % start from best-fit values
+lb_q = [0, -pi, 0];
+ub_q = [10, pi, 2];
+
+for i = 1:length(k_range)
+    k_trial = k_range(i);
+
+    % Wrap the model so lsqcurvefit only sees the free parameters
+    fitfun_fixed_k = @(q, x) model_k_fixed(q, x, k_trial);
+
+    [~, resnorm_i] = lsqcurvefit(fitfun_fixed_k, q0, x_data, y_data, ...
+        lb_q, ub_q, options);
+
+    chi2_profile(i) = resnorm_i / sigma^2;
+end
+
+% The profile Delta chi^2
+delta_chi2_profile = chi2_profile - chi2;   % chi2 is the global minimum
+
+% Find the 95% confidence bounds by interpolation
+% Left bound: find where delta_chi2 crosses the threshold on the left
+idx_left  = find(k_range < k_best & delta_chi2_profile > delta_chi2_95, 1, 'last');
+idx_right = find(k_range > k_best & delta_chi2_profile > delta_chi2_95, 1, 'first');
+
+if ~isempty(idx_left)
+    % Interpolate between the last point above and first point below
+    k_lo = interp1(delta_chi2_profile(idx_left:idx_left+1), ...
+                   k_range(idx_left:idx_left+1), delta_chi2_95);
+else
+    k_lo = k_range(1);
+    fprintf('  Warning: left 95%% bound not captured; widen k_range.\n');
+end
+
+if ~isempty(idx_right)
+    k_hi = interp1(delta_chi2_profile(idx_right-1:idx_right), ...
+                   k_range(idx_right-1:idx_right), delta_chi2_95);
+else
+    k_hi = k_range(end);
+    fprintf('  Warning: right 95%% bound not captured; widen k_range.\n');
+end
+
+fprintf('  Profiled parameter: k (wavenumber)\n');
+fprintf('  Best-fit value:     k = %.4f\n', k_best);
+fprintf('  True value:         k = %.4f\n', k_true);
+fprintf('  95%% confidence interval: k in [%.4f, %.4f]\n', k_lo, k_hi);
+fprintf('  Asymmetric error bars:   k = %.4f  +%.4f / -%.4f\n', ...
+    k_best, k_hi - k_best, k_best - k_lo);
+
+if k_true >= k_lo && k_true <= k_hi
+    fprintf('  => True value IS inside the 95%% interval (as expected).\n');
+else
+    fprintf('  => True value is OUTSIDE the 95%% interval.\n');
+end
+
+% --- Figure 7: Profile chi-square curve ---
+figure(7); clf;
+
+subplot(2,1,1);
+plot(k_range, chi2_profile, 'b-', 'LineWidth', 1.5);
+hold on;
+yline(chi2, 'k:', 'LineWidth', 1, 'Label', '\chi^2_{min}');
+yline(chi2 + delta_chi2_95, 'r--', 'LineWidth', 1.5, ...
+    'Label', '\chi^2_{min} + 3.84');
+xline(k_best, 'k:', 'LineWidth', 1);
+xline(k_lo, 'r-', 'LineWidth', 1, 'Label', 'k_{lo}');
+xline(k_hi, 'r-', 'LineWidth', 1, 'Label', 'k_{hi}');
+xline(k_true, 'g--', 'LineWidth', 1, 'Label', 'k_{true}');
+xlabel('k (fixed)');
+ylabel('\chi^2');
+title('Profile \chi^2: fix k, re-fit all other parameters');
+grid on;
+
+subplot(2,1,2);
+plot(k_range, delta_chi2_profile, 'b-', 'LineWidth', 1.5);
+hold on;
+yline(delta_chi2_95, 'r--', 'LineWidth', 1.5, ...
+    'Label', sprintf('\\Delta\\chi^2 = %.2f  (95%%)', delta_chi2_95));
+yline(0, 'k:');
+
+% Shade the 95% confidence region
+idx_in = delta_chi2_profile <= delta_chi2_95;
+area(k_range(idx_in), delta_chi2_profile(idx_in), ...
+    'FaceColor', [0.7 0.85 1.0], 'FaceAlpha', 0.6, 'EdgeColor', 'none');
+
+xline(k_best, 'k:', 'LineWidth', 1);
+xline(k_true, 'g--', 'LineWidth', 1, 'Label', 'k_{true}');
+xlabel('k (fixed)');
+ylabel('\Delta\chi^2 = \chi^2(k) - \chi^2_{min}');
+title(sprintf('95%% confidence interval: k \\in [%.4f, %.4f]', k_lo, k_hi));
+grid on;
+
 %% Summary
 fprintf('\n========================================\n');
 fprintf('=== Summary ===\n');
@@ -336,4 +468,8 @@ fprintf(['The chi-square statistic measures how well a model describes\n' ...
     '  2. p-value = 1 - chi2cdf(chi^2, N-M) should be > 0.05.\n' ...
     '  3. chi^2_red >> 1 => bad model or underestimated errors.\n' ...
     '  4. chi^2_red << 1 => overestimated errors (or overfitting).\n' ...
-    '  5. ALWAYS inspect residuals for systematic structure.\n']);
+    '  5. ALWAYS inspect residuals for systematic structure.\n' ...
+    '  6. Profile chi^2 gives rigorous confidence intervals:\n' ...
+    '     fix one parameter, re-fit the rest, and find where\n' ...
+    '     Delta_chi^2 = chi^2(p_j) - chi^2_min exceeds the\n' ...
+    '     threshold chi2inv(CL, 1)  (3.84 for 95%%, 1 param).\n']);
