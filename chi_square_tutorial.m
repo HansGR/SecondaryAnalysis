@@ -274,6 +274,56 @@ fprintf('  Correct model, but sigma = %.2f (true sigma = %.2f):\n', ...
 fprintf('    chi^2_red = %.3f,  p-value = %.4f\n', chi2_red_large, p_value_large);
 fprintf('    => chi^2_red << 1: errors look overestimated.\n');
 
+% --- Figure 5: Underestimated errors (sigma too small) ---
+figure(5); clf;
+
+subplot(2,1,1);
+errorbar(x_data, y_data, sigma_small*ones(N,1), 'o', 'MarkerSize', 4, ...
+    'DisplayName', 'Data (tiny error bars)');
+hold on;
+plot(x_fine, model(x_fine, p_fit), 'r-', 'LineWidth', 1.5, ...
+    'DisplayName', 'Best fit (correct model)');
+xlabel('x'); ylabel('y');
+title(sprintf('Underestimated Errors (\\sigma = %.2f, true = %.2f)  \\chi^2_{red} = %.2f,  p = %.1e', ...
+    sigma_small, sigma, chi2_red_small, p_value_small));
+legend('Location', 'best');
+grid on;
+
+subplot(2,1,2);
+errorbar(x_data, residual, sigma_small*ones(N,1), 'o', 'MarkerSize', 4);
+hold on;
+yline(0, 'k-');
+yline(sigma_small, 'r--', ['+\sigma = ' num2str(sigma_small)]);
+yline(-sigma_small, 'r--', ['-\sigma = ' num2str(sigma_small)]);
+xlabel('x'); ylabel('Residual (data - fit)');
+title('Residuals — many points fall outside error bars');
+grid on;
+
+% --- Figure 6: Overestimated errors (sigma too large) ---
+figure(6); clf;
+
+subplot(2,1,1);
+errorbar(x_data, y_data, sigma_large*ones(N,1), 'o', 'MarkerSize', 4, ...
+    'DisplayName', 'Data (huge error bars)');
+hold on;
+plot(x_fine, model(x_fine, p_fit), 'r-', 'LineWidth', 1.5, ...
+    'DisplayName', 'Best fit (correct model)');
+xlabel('x'); ylabel('y');
+title(sprintf('Overestimated Errors (\\sigma = %.2f, true = %.2f)  \\chi^2_{red} = %.3f,  p = %.3f', ...
+    sigma_large, sigma, chi2_red_large, p_value_large));
+legend('Location', 'best');
+grid on;
+
+subplot(2,1,2);
+errorbar(x_data, residual, sigma_large*ones(N,1), 'o', 'MarkerSize', 4);
+hold on;
+yline(0, 'k-');
+yline(sigma_large, 'r--', ['+\sigma = ' num2str(sigma_large)]);
+yline(-sigma_large, 'r--', ['-\sigma = ' num2str(sigma_large)]);
+xlabel('x'); ylabel('Residual (data - fit)');
+title('Residuals — all points well within error bars');
+grid on;
+
 %% Summary
 fprintf('\n========================================\n');
 fprintf('=== Summary ===\n');
